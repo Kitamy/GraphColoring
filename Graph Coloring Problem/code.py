@@ -6,6 +6,36 @@ from collections import deque
 import random
 
 
+BEST_KNOWN_COLORS = {
+    "david.col": 11,
+    "fpsol2.i.1.col": 65,
+    "games120.col": 9,
+    "huck.col": 11,
+    "inithx.i.1.col": 54,
+    "le450_5a.col": 5,
+    "le450_5c.col": 5,
+    "le450_15b.col": 15,
+    "le450_25a.col": 25,
+    "le450_25c.col": 25,
+    "le450_25d.col": 25,
+    "miles250.col": 8,
+    "miles500.col": 20,
+    "miles1500.col": 73,
+    "mulsol.i.1.col": 49,
+    "mulsol.i.5.col": 31,
+    "myciel4.col": 5,
+    "myciel5.col": 6,
+    "myciel6.col": 7,
+    "queen6_6.col": 7,
+    "queen7_7.col": 7,
+    "queen8_8.col": 9,
+    "queen8_12.col": 12,
+    "queen10_10.col": 10,
+    "queen11_11.col": 11,
+    "zeroin.i.1.col": 49,
+}
+
+
 def load_col_file(filename):
     G = nx.Graph()
     
@@ -209,6 +239,72 @@ def tabu_search_coloring(G: nx.Graph, initial_coloring, max_iter=1000, tabu_tenu
     else:
         print("Advertencia: Tabu terminó con conflictos")
         return best_coloring
+    
+
+def kempe_chain_swap(G: nx.Graph, coloring: dict, col1: str, col2: str, seed: int) -> dict:
+    """
+    Construye la componente conexa inducida por vértices de color col1 o col2
+    a la que pertenece 'seed' y luego intercambia col1<->col2 en esa cadena.
+    """
+    # 1) Identificar la cadena de Kempe
+    chain = set()
+    queue = deque([seed])
+    while queue:
+        u = queue.popleft()
+        if u in chain:
+            continue
+        if coloring[u] not in (col1, col2):
+            continue
+        chain.add(u)
+        for v in G.neighbors(u):
+            if v not in chain and coloring[v] in (col1, col2):
+                queue.append(v)
+
+    # 2) Hacer el swap en la cadena
+    new_coloring = coloring.copy()
+    for u in chain:
+        new_coloring[u] = col2 if coloring[u] == col1 else col1
+    return new_coloring
+
+def local_search_with_kempe(G: nx.Graph, coloring: dict, max_iter: int = 1000) -> dict:
+    """
+    Aplica iterativamente swaps de Kempe para tratar de reducir el total de colores.
+    En cada iteración:
+      - Elige aleatoriamente dos colores col1, col2.
+      - Escoge un seed (vértice) de color col1.
+      - Realiza el swap de Kempe.
+      - Si el nuevo coloreo mantiene la validez y reduce el número de colores, lo acepta.
+    """
+    best = coloring.copy()
+    best_used = set(best.values())
+    for it in range(max_iter):
+        cols = list(best_used)
+        if len(cols) < 2:
+            break
+        # 1) Elige dos colores al azar
+        col1, col2 = random.sample(cols, 2)
+        # 2) Escoge un vértice semilla de col1
+        seeds = [v for v,c in best.items() if c == col1]
+        if not seeds:
+            continue
+        seed = random.choice(seeds)
+        # 3) Aplica Kempe-swap
+        candidate = kempe_chain_swap(G, best, col1, col2, seed)
+        # 4) Verifica validez
+        if not es_coloreo_valido(G, candidate):
+            continue
+        # 5) Comprueba si podemos eliminar algún color
+        used = set(candidate.values())
+        # si hay menos colores, lo aceptamos
+        if len(used) < len(best_used):
+            best = candidate
+            best_used = used
+            print(f"Iter {it}: reducido a {len(best_used)} colores ({col1}<->{col2})")
+            # resetear iteraciones para seguir explorando ese nuevo nivel
+            it = 0
+
+    return best
+
 
 
 
@@ -274,7 +370,7 @@ def local_search_improvement(G, color_map, max_iterations=100000):
 start_total = time.time()
 
 # Cargar el grafo desde archivo. NOTA: Cambiar el directorio por donde se encuentre en el archivo de la instancia.
-graph = load_col_file("DIMACS/queen8_8.col")
+graph = load_col_file("DIMACS/queen11_11.col")
 
 print("\n********** Información del Grafo **********\n")
 print(graph, "\n")
@@ -320,46 +416,21 @@ else:
 
 
 # Aplicar DSATUR
-dsatur_result, _ = dsatur_coloring(graph)
-# Aplicar Tabu Search
-#coloring_result = tabu_search_coloring(graph, coloring_result, max_iter=500, tabu_tenure=10)
-tabu_result = tabu_search_coloring(graph, dsatur_result, max_iter=1000, tabu_tenure=15, restart_threshold=100)
-used_colors = set(coloring_result.values())
+# dsatur_result, _ = dsatur_coloring(graph)
+# # Aplicar Tabu Search
+# #coloring_result = tabu_search_coloring(graph, coloring_result, max_iter=500, tabu_tenure=10)
+# tabu_result = tabu_search_coloring(graph, dsatur_result, max_iter=1000, tabu_tenure=15, restart_threshold=100)
+# used_colors = set(coloring_result.values())
 
-print(f"\nColores después de Tabu Search: {len(used_colors)}")
-
-
-
-BEST_KNOWN_COLORS = {
-    "david.col": 11,
-    "fpsol2.i.1.col": 65,
-    "games120.col": 9,
-    "huck.col": 11,
-    "inithx.i.1.col": 54,
-    "le450_5a.col": 5,
-    "le450_5c.col": 5,
-    "le450_15b.col": 15,
-    "le450_25a.col": 25,
-    "le450_25c.col": 25,
-    "le450_25d.col": 25,
-    "miles250.col": 8,
-    "miles500.col": 20,
-    "miles1500.col": 73,
-    "mulsol.i.1.col": 49,
-    "mulsol.i.5.col": 31,
-    "myciel4.col": 5,
-    "myciel5.col": 6,
-    "myciel6.col": 7,
-    "queen6_6.col": 7,
-    "queen7_7.col": 7,
-    "queen8_8.col": 9,
-    "queen8_12.col": 12,
-    "queen10_10.col": 10,
-    "queen11_11.col": 11,
-    "zeroin.i.1.col": 49,
-}
+# print(f"\nColores después de Tabu Search: {len(used_colors)}")
 
 
+# Después de obtener un coloreo inicial (p. ej. DSATUR):
+initial_coloring, _ = dsatur_coloring(graph)
+improved = local_search_with_kempe(graph, initial_coloring, max_iter=5000)
+
+print(f"Colores antes: {len(set(initial_coloring.values()))}")
+print(f"Colores después de Kempe swaps: {len(set(improved.values()))}")
 
 
 def run_all_instances(folder="DIMACS", use_tabu=False):
@@ -412,4 +483,4 @@ def run_all_instances(folder="DIMACS", use_tabu=False):
 
 #run_all_instances()
 #run_all_instances("QUEENS")
-run_all_instances("DIMACS")
+#run_all_instances("DIMACS")
