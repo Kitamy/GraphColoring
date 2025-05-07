@@ -2,6 +2,9 @@ import networkx as nx
 import matplotlib.pyplot as plt
 import os
 import time
+from collections import deque
+import random
+
 
 def load_col_file(filename):
     G = nx.Graph()
@@ -91,6 +94,122 @@ def dsatur_coloring(G: nx.Graph) -> tuple[dict, set]:
     return color_map, used_colors
 
 
+# def count_conflicts(G, coloring):
+#     conflicts = 0
+#     for u, v in G.edges():
+#         if coloring[u] == coloring[v]:
+#             conflicts += 1
+#     return conflicts
+
+
+
+# def tabu_search_coloring(G: nx.Graph, initial_coloring, max_iter=1000, tabu_tenure=7):
+#     current_coloring = initial_coloring.copy()
+#     best_coloring = current_coloring.copy()
+#     best_num_colors = len(set(best_coloring.values()))
+    
+#     tabu_list = deque(maxlen=tabu_tenure)
+    
+#     for _ in range(max_iter):
+#         neighbors = []
+#         used_colors = list(set(current_coloring.values()))
+
+#         # Generar vecinos válidos: cambiar el color de un nodo a otro posible
+#         for node in G.nodes():
+#             current_color = current_coloring[node]
+#             neighbor_colors = {current_coloring[n] for n in G.neighbors(node)}
+            
+#             for new_color in used_colors:
+#                 if new_color != current_color and new_color not in neighbor_colors:
+#                     move = (node, current_color, new_color)
+#                     if move not in tabu_list:
+#                         new_coloring = current_coloring.copy()
+#                         new_coloring[node] = new_color
+#                         neighbors.append((new_coloring, move))
+
+#         if not neighbors:
+#             break  # No hay vecinos válidos
+
+#         # Evaluar vecinos: elegir el que tenga menos colores
+#         #best_neighbor, best_move = min(neighbors, key=lambda x: len(set(x[0].values())))
+#         best_neighbor, best_move = min(neighbors, key=lambda x: count_conflicts(G, x[0]))
+
+#         current_coloring = best_neighbor
+#         tabu_list.append(best_move)
+
+#         current_colors_used = len(set(current_coloring.values()))
+#         if current_colors_used < best_num_colors:
+#             best_coloring = current_coloring.copy()
+#             best_num_colors = current_colors_used
+
+#     return best_coloring
+
+def count_conflicts(G, coloring):
+    """Cuenta cuántas aristas tienen nodos con el mismo color."""
+    return sum(1 for u, v in G.edges() if coloring[u] == coloring[v])
+
+def random_coloring(G, color_count):
+    """Asigna a cada nodo un color aleatorio entre los disponibles."""
+    colors = [f"Color-{i}" for i in range(color_count)]
+    return {node: random.choice(colors) for node in G.nodes()}
+
+def tabu_search_coloring(G: nx.Graph, initial_coloring, max_iter=1000, tabu_tenure=10, restart_threshold=100):
+    current_coloring = initial_coloring.copy()
+    best_coloring = current_coloring.copy()
+    best_conflicts = count_conflicts(G, current_coloring)
+
+    tabu_list = deque(maxlen=tabu_tenure)
+    no_improve_count = 0
+
+    for i in range(max_iter):
+        neighbors = []
+        used_colors = list(set(current_coloring.values()))
+
+        for node in G.nodes():
+            current_color = current_coloring[node]
+            neighbor_colors = {current_coloring[n] for n in G.neighbors(node)}
+            
+            for new_color in used_colors:
+                if new_color == current_color:
+                    continue
+                if new_color not in neighbor_colors:  # solo movimientos válidos
+                    move = (node, current_color, new_color)
+                    if move not in tabu_list:
+                        new_coloring = current_coloring.copy()
+                        new_coloring[node] = new_color
+                        neighbors.append((new_coloring, move))
+
+        if not neighbors:
+            break
+
+        # Evaluar por número de conflictos
+        best_neighbor, best_move = min(neighbors, key=lambda x: count_conflicts(G, x[0]))
+        current_coloring = best_neighbor
+        tabu_list.append(best_move)
+
+        current_conflicts = count_conflicts(G, current_coloring)
+        if current_conflicts < best_conflicts:
+            best_coloring = current_coloring.copy()
+            best_conflicts = current_conflicts
+            no_improve_count = 0
+        else:
+            no_improve_count += 1
+
+        # Reinicio si no mejora tras muchas iteraciones
+        if no_improve_count >= restart_threshold:
+            # Reinicia con una solución aleatoria con mismo número de colores usados
+            current_coloring = random_coloring(G, len(set(current_coloring.values())))
+            no_improve_count = 0
+            # También podrías reiniciar con dsatur_coloring(G)[0] si prefieres
+            # current_coloring = dsatur_coloring(G)[0]
+
+    # Como usamos conflicto como criterio, devolver solución válida más cercana
+    if count_conflicts(G, best_coloring) == 0:
+        return best_coloring
+    else:
+        print("Advertencia: Tabu terminó con conflictos")
+        return best_coloring
+
 
 
 def draw_colored_graph(G, coloring_result, start_time):
@@ -155,7 +274,7 @@ def local_search_improvement(G, color_map, max_iterations=100000):
 start_total = time.time()
 
 # Cargar el grafo desde archivo. NOTA: Cambiar el directorio por donde se encuentre en el archivo de la instancia.
-graph = load_col_file("DIMACS/myciel4.col")
+graph = load_col_file("DIMACS/queen8_8.col")
 
 print("\n********** Información del Grafo **********\n")
 print(graph, "\n")
@@ -200,6 +319,16 @@ else:
  # type: ignore
 
 
+# Aplicar DSATUR
+dsatur_result, _ = dsatur_coloring(graph)
+# Aplicar Tabu Search
+#coloring_result = tabu_search_coloring(graph, coloring_result, max_iter=500, tabu_tenure=10)
+tabu_result = tabu_search_coloring(graph, dsatur_result, max_iter=1000, tabu_tenure=15, restart_threshold=100)
+used_colors = set(coloring_result.values())
+
+print(f"\nColores después de Tabu Search: {len(used_colors)}")
+
+
 
 BEST_KNOWN_COLORS = {
     "david.col": 11,
@@ -233,8 +362,10 @@ BEST_KNOWN_COLORS = {
 
 
 
-def run_all_instances(folder="DIMACS"):
-    print(f"{'Instance':<20} {'Greedy':<10} {'DSATUR':<10} {'Optimal':<10} {'Greedy Gap':<12} {'DSATUR Gap':<12}")
+def run_all_instances(folder="DIMACS", use_tabu=False):
+    header = f"{'Instance':<20} {'Greedy':<10} {'DSATUR':<10}  {'Optimal':<10} {'Greedy Gap':<12} {'DSATUR Gap':<12}"
+    print(header)
+    print("-" * len(header))
 
     for filename in os.listdir(folder):
         if not filename.endswith(".col"):
@@ -244,18 +375,29 @@ def run_all_instances(folder="DIMACS"):
         G = load_col_file(filepath)
 
         # GREEDY
-        start = time.time()
         greedy_result, greedy_colors = greedy_coloring(G)
-        greedy_time = time.time() - start
         greedy_count = len(greedy_colors)
 
         # DSATUR
-        start = time.time()
         dsatur_result, dsatur_colors = dsatur_coloring(G)
-        dsatur_time = time.time() - start
         dsatur_count = len(dsatur_colors)
 
+        # Óptimo conocido
         optimal = BEST_KNOWN_COLORS.get(filename, "?")
+
+        # TABU solo si dsatur_count > optimal
+        # if isinstance(optimal, int) and dsatur_count > optimal:
+        #     tabu_result = tabu_search_coloring(
+        #         G,
+        #         dsatur_result,
+        #         max_iter=1000,
+        #         tabu_tenure=15,
+        #         restart_threshold=100
+        #     )
+        #     tabu_count = len(set(tabu_result.values()))
+        # else:
+        #     # No ejecutar tabu, usar el mismo resultado que DSATUR
+        #     tabu_count = dsatur_count
 
         def gap(alg_value):
             if isinstance(optimal, int):
@@ -263,7 +405,11 @@ def run_all_instances(folder="DIMACS"):
             else:
                 return "N/A"
 
-        print(f"{filename:<20} {greedy_count:<10} {dsatur_count:<10} {optimal:<10} {gap(greedy_count):<12} {gap(dsatur_count):<12}")
+        print(f"{filename:<20} {greedy_count:<10} {dsatur_count:<10}  {optimal:<10} {gap(greedy_count):<12} {gap(dsatur_count):<12}")
 
 
-run_all_instances()
+
+
+#run_all_instances()
+#run_all_instances("QUEENS")
+run_all_instances("DIMACS")
