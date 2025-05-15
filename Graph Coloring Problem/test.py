@@ -162,6 +162,25 @@ def iterated_local_search(G, initial_map, iterations=100, local_max_iterations=1
 
     return best_map, best_color_count
 
+# ------------ Validador  ------------
+def es_coloreo_valido(G: nx.Graph, color_map: dict) -> bool:
+    """
+    Comprueba que para cada arista (u, v) en G, color_map[u] != color_map[v].
+    Devuelve True si es válido, False en caso contrario.
+    """
+    for u, v in G.edges():
+        if color_map.get(u) == color_map.get(v):
+            return False
+    return True
+
+def conflictos_invalidez(G: nx.Graph, color_map: dict, max_mostrar: int = 10):
+    """
+    Devuelve una lista de hasta max_mostrar pares (u, v) que violan la validez.
+    """
+    conflictos = [(u, v) for u, v in G.edges() if color_map.get(u) == color_map.get(v)]
+    return conflictos[:max_mostrar]
+
+
 # ------------ Configuración ------------
 @dataclass
 class Config:
@@ -218,27 +237,50 @@ class GraphColoringBenchmark:
 
             if self.cfg.use_greedy:
                 cmap_g, g_cnt, g_t = self.solver.greedy(G)
-                row.append(f"{g_cnt}{f' ({g_t:.3f}s)' if self.cfg.time_enabled else ''}")
+                # Verificar factibilidad:
+                if not es_coloreo_valido(G, cmap_g):
+                    print(f"[ERROR] Solución Greedy para {fname} NO es válida. Conflictos:", 
+                        conflictos_invalidez(G, cmap_g))
+                    row.append("INVÁLIDA")
+                    row.append("-")
+                    base_map = {}
+                else:
+                    row.append(f"{g_cnt}{f' ({g_t:.3f}s)' if self.cfg.time_enabled else ''}")
                 base_map = cmap_g
             else:
                 base_map = {}
 
             if self.cfg.use_local:
                 cmap_l, cmap_cnt, local_improved, l_t = self.solver.local(G, base_map)
-                row.append(f"{cmap_cnt}{f' ({l_t:.3f}s)' if self.cfg.time_enabled else ''}")
-                row.append("Yes" if local_improved and cmap_cnt < g_cnt else "No")
+                # Verificar factibilidad:
+                if not es_coloreo_valido(G, cmap_l):
+                    print(f"[ERROR] Solución Local para {fname} NO es válida. Conflictos:", 
+                        conflictos_invalidez(G, cmap_l))
+                    row.append("INVÁLIDA")
+                    row.append("-")
+                else:
+                    row.append(f"{cmap_cnt}{f' ({l_t:.3f}s)' if self.cfg.time_enabled else ''}")
+                    row.append("Yes" if local_improved and cmap_cnt < g_cnt else "No")
                 base_map = cmap_l if local_improved else base_map
 
             if self.cfg.use_ils:
                 cmap_ils, cmap_ils_cnt, ils_t = self.solver.ils(G, base_map)  # ILS usando la solución Greedy
-                row.append(f"{cmap_ils_cnt}{f' ({ils_t:.3f}s)' if self.cfg.time_enabled else ''}")
-                row.append("Yes" if cmap_ils_cnt < g_cnt else "No")  # Verificar si ILS mejoró el número de colores
+                # Verificar factibilidad:
+                if not es_coloreo_valido(G, cmap_ils):
+                    print(f"[ERROR] Solución ILS para {fname} NO es válida. Conflictos:", 
+                        conflictos_invalidez(G, cmap_ils))
+                    # Decides si usas la solución inicial o marcas como inválida:
+                    row.append("INVÁLIDA")
+                    row.append("-")
+                else:
+                    row.append(f"{cmap_ils_cnt}{f' ({ils_t:.3f}s)' if self.cfg.time_enabled else ''}")
+                    row.append("Yes" if cmap_ils_cnt < g_cnt else "No")
 
             row.append(str(opt) if opt is not None else "?")
             print("  ".join(f"{r:<16}" for r in row))
 
 # ------------ Uso ------------
 if __name__ == '__main__':
-    cfg = Config(use_greedy=True, use_local=True, use_ils=True, time_enabled=True)
+    cfg = Config(use_greedy=True, use_local=True, use_ils=False, time_enabled=True)
     bench = GraphColoringBenchmark(cfg)
     bench.run_all('DIMACS')
