@@ -162,6 +162,50 @@ def iterated_local_search(G, initial_map, iterations=100, local_max_iterations=1
 
     return best_map, best_color_count
 
+
+# ------------ Algoritmo DSATUR ------------
+def dsatur_coloring(G: nx.Graph) -> tuple[dict, set]:
+    # Inicializaciones
+    nodes = set(G.nodes())
+    color_map: dict = {}
+    # Colores disponibles (puedes usar tu lista color_names global)
+    colors = []
+    # Saturación: para cada nodo, el conjunto de colores en sus vecinos
+    saturation: dict = {u: set() for u in nodes}
+    # Grados originales
+    degree = dict(G.degree())
+
+    while nodes:
+        # Elegir el nodo con mayor saturación; empata con mayor grado
+        u = max(
+            nodes,
+            key=lambda x: (len(saturation[x]), degree[x])
+        )
+
+        # Determinar el color mínimo que no use ningún vecino
+        neighbor_colors = { color_map[v] for v in G.neighbors(u) if v in color_map }
+        # Encuentra el primer índice de color libre
+        for idx, c in enumerate(colors):
+            if c not in neighbor_colors:
+                chosen_color = c
+                break
+        else:
+            # Si ningún color existente vale, creamos uno nuevo
+            chosen_color = f"Color-{len(colors)}"
+            colors.append(chosen_color)
+
+        # Asignar color
+        color_map[u] = chosen_color
+        nodes.remove(u)
+
+        # Actualizar saturación de vecinos no coloreados
+        for v in G.neighbors(u):
+            if v in nodes:
+                saturation[v].add(chosen_color)
+
+    return color_map, set(colors)
+
+
 # ------------ Validador  ------------
 def es_coloreo_valido(G: nx.Graph, color_map: dict) -> bool:
     """
@@ -185,6 +229,7 @@ def conflictos_invalidez(G: nx.Graph, color_map: dict, max_mostrar: int = 10):
 @dataclass
 class Config:
     use_greedy: bool = True
+    use_dsatur: bool = True
     use_local: bool = True
     use_ils: bool = True  # Agregar la opción para usar ILS
     time_enabled: bool = False
@@ -212,6 +257,12 @@ class GraphColoringSolver:
         result, count = iterated_local_search(G, init_coloring)
         elapsed = time.time() - start
         return result, count, elapsed
+    
+    def dsatur(self, G):
+        start = time.time()
+        coloring, used = dsatur_coloring(G)
+        elapsed = time.time() - start
+        return coloring, len(used), elapsed
 
 # ------------ Benchmark ------------
 class GraphColoringBenchmark:
@@ -222,6 +273,7 @@ class GraphColoringBenchmark:
     def run_all(self, folder: str):
         cols = ['Instance']
         if self.cfg.use_greedy: cols += ['Greedy' + (' (t)' if self.cfg.time_enabled else '')]
+        if self.cfg.use_dsatur: cols += ['DSATUR']
         if self.cfg.use_local:  cols += ['Local'  + (' (t)' if self.cfg.time_enabled else ''), 'Local Improved']
         if self.cfg.use_ils:    cols += ['ILS'    + (' (t)' if self.cfg.time_enabled else ''), 'ILS Improved']
         cols += ['Optimal']
@@ -250,6 +302,17 @@ class GraphColoringBenchmark:
             else:
                 base_map = {}
 
+            if self.cfg.use_dsatur:
+                cmap_d, d_cnt, _ = self.solver.dsatur(G)
+                # Verificar factibilidad:
+                if not es_coloreo_valido(G, cmap_d):
+                    print(f"[ERROR] Solución DSATUR para {fname} NO es válida. Conflictos:", 
+                        conflictos_invalidez(G, cmap_d))
+                    row.append("INVÁLIDA")
+                    row.append("-")
+                else:
+                    row.append(f"{d_cnt}")
+
             if self.cfg.use_local:
                 cmap_l, cmap_cnt, local_improved, l_t = self.solver.local(G, base_map)
                 # Verificar factibilidad:
@@ -262,6 +325,8 @@ class GraphColoringBenchmark:
                     row.append(f"{cmap_cnt}{f' ({l_t:.3f}s)' if self.cfg.time_enabled else ''}")
                     row.append("Yes" if local_improved and cmap_cnt < g_cnt else "No")
                 base_map = cmap_l if local_improved else base_map
+
+
 
             if self.cfg.use_ils:
                 cmap_ils, cmap_ils_cnt, ils_t = self.solver.ils(G, base_map)  # ILS usando la solución Greedy
