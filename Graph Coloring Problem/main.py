@@ -90,7 +90,7 @@ def local_search_first_improvement(G, color_map, max_iterations=100000):
                 break
 
         new_used_colors = {color_map[n] for n in G.nodes()}
-        print(new_used_colors)
+
         if not improvement_found or len(new_used_colors) >= len(used_colors):
             break
 
