@@ -52,6 +52,7 @@ def greedy_coloring(G: nx.Graph) -> tuple[dict, set]:
 
     for node in nodes_sorted:
         neighbor_colors = {color_map[neighbor] for neighbor in G.neighbors(node) if neighbor in color_map}
+        
         color_index = 0
         while color_index < len(color_names) and color_names[color_index] in neighbor_colors:
             color_index += 1
@@ -62,16 +63,17 @@ def greedy_coloring(G: nx.Graph) -> tuple[dict, set]:
         else:
             new_color = color_names[color_index]
 
-        color_map[node] = new_color
-        used_colors.add(new_color)
+        color_map[node] = new_color # Color Assigned to node
+        used_colors.add(new_color) # Used Colors
 
     return color_map, used_colors
 
 def local_search_first_improvement(G, color_map, max_iterations=100000):
     improvement_found = False
+    
     for _ in range(max_iterations):
-        used_colors = set(color_map.values())
-
+        used_colors = set(color_map.values()) # Colors of Greedy Solution
+        
         for node in G.nodes():
             current_color = color_map[node]
             neighbor_colors = {color_map[neighbor] for neighbor in G.neighbors(node)}
@@ -88,6 +90,7 @@ def local_search_first_improvement(G, color_map, max_iterations=100000):
                 break
 
         new_used_colors = {color_map[n] for n in G.nodes()}
+        print(new_used_colors)
         if not improvement_found or len(new_used_colors) >= len(used_colors):
             break
 
@@ -105,6 +108,7 @@ def backtracking_coloring(G: nx.Graph, max_colors: int) -> tuple[dict, float]:
     def solve(index):
         if index == len(nodes):
             return True
+        
         for c in range(max_colors):
             if is_valid(nodes[index], c):
                 color_map[nodes[index]] = c
